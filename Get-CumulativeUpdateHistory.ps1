@@ -14,14 +14,14 @@ The script is broken down into three parts: two functions and the main body of t
 [CmdletBinding()]
 Param ()
 
-# A list of the Update History support web pages for all supported versions of Windows 10/11.
-# This variable requires manual updating once a year when a new version of Windows 11 is released.
-$UpdateHistoryUris=@"
-ProductName,Version,Uri
-Windows 11,23H2,https://support.microsoft.com/en-us/help/5031682
-Windows 11,22H2,https://support.microsoft.com/en-us/help/5018680
-Windows 11,21H2,https://support.microsoft.com/en-us/help/5006099
-Windows 10,22H2,https://support.microsoft.com/en-us/help/5018682
+# A list of the Update History support web pages for Windows 11 and Windows 10.
+# The Update History webpage for each version of Windows 11 includes *all* Cumulative Updates for *all* supported versions of Windows 11
+# The Update History webpage for Windows 11, https://aka.ms/WindowsUpdateHistory, currently points to Windows 11 Version 22H2
+# The Update History webpage for Windows 10 points to Windows 10 Version 22H2, the last supported version of Windows 10
+$UpdateHistoryWebsites=@"
+ProductName,Uri
+Windows 11,https://aka.ms/WindowsUpdateHistory
+Windows 10,https://support.microsoft.com/en-us/help/5018682
 "@
 
 <#
@@ -82,7 +82,9 @@ This function accepts the hypertext link for a Cumulative Update and returns a c
 
     if (($UpdateLink.class -ne "supLeftNavLink") -or ($UpdateLink.outerHTML -notmatch "OS Build"))
     {
-        throw "The hypertext link is not in the expected format."
+        Write-Error "Format-UpdateLink: The hypertext link is not in the expected format."
+
+        return
     }
 
     # Extract the label of the hypertext link - the text between the start '<a>' and end '</a>' tags
@@ -126,17 +128,11 @@ This function accepts the hypertext link for a Cumulative Update and returns a c
 ################################
 #>
 
-
 # Retrieve version details of the running operating system
 $CurrentWindowsVersion = Get-WindowsVersion
 
-# Locate the update history web page that corresponds to the running operating system
- $Uri = $UpdateHistoryUris | ConvertFrom-Csv | Where-Object {$CurrentWindowsVersion.ProductName -match $_.ProductName -and $CurrentWindowsVersion.Version -eq $_.Version} | ForEach-Object {$_.Uri}
-
-if (-not $Uri)
-{ 
-    throw "Failed to find the update history web page for the runnning operating system." 
-}
+# Locate the Update History web page that corresponds to the running operating system's name, e.g. Windows 11
+$UpdateHistoryWebsite = $UpdateHistoryWebsites | ConvertFrom-Csv | Where-Object {$CurrentWindowsVersion.ProductName -match $_.ProductName}
 
 # Disable the (default) progress indicator shown by 'Invoke-WebRequest'; it significantly affects download speed
 $ProgressPreference = 'SilentlyContinue'
@@ -149,23 +145,38 @@ Save the HTML web response, which contains the following information:
     - Links: The <a> (anchor) HTML element, with its href attribute, creates a hyperlink to web pages, files, email addresses, locations in the same page, or anything else a URL can address
     - Relation Links: The <link> HTML element specifies relationships between the current document and an external resource. This element is most commonly used to link to stylesheets and is also used to establish site icons.
 #>
-$HtmlWebResponse = Invoke-WebRequest -Uri $Uri -UseBasicParsing -ErrorAction Stop
+$HtmlWebResponse = Invoke-WebRequest -Uri $UpdateHistoryWebsite.Uri -UseBasicParsing -ErrorAction Stop
 
 # Verify that the web page contains hypertext links - <a> or anchor Html elements. This is the only property of the web response object that we're interested in.
 If (-not $HtmlWebResponse.Links)
 { 
-    throw "Web response does not contain the expected HTML code."
+    throw "The Html Web Response is not in the expected format."
 }
 
 # Retrieve all the hypertext links - <a> or anchor Html elements - that have "supLeftNavLink" as the class name and the string "OS Build" in the label
 # Example: <a class="supLeftNavLink" data-bi-slot="11" href="/en-us/help/5028185">July 11, 2023&#x2014;KB5028185 (OS Build 22621.1992)</a> 
 $UpdateLinks = $HtmlWebResponse.Links | Where-Object {$_.class -eq "supLeftNavLink" -and $_.outerHTML -match "OS Build"}
 
+if (-not $UpdateLinks) 
+{
+    throw "The Update History support article $($UpdateHistoryWebsite.Uri) for $($UpdateHistoryWebsite.ProductName) does not contain the expected hypertext links."
+}
+
 # Find the installed update; match the full OS Build of the running operating system, e.g. 22621.2506
 $InstalledUpdateLink = $UpdateLinks | Where-Object {$_.outerHTML -match $CurrentWindowsVersion.OSBuild} | Select-Object -First 1
 
+if (-not $InstalledUpdateLink)
+{
+    throw "Unable to find the installed Cumulative Update for OS Build $($CurrentWindowsVersion.OSBuild) in the $($UpdateHistoryWebsite.ProductName) Update History support article $($UpdateHistoryWebsite.Uri)"
+}
+
 # Find the latest update for the same current build, e.g. 22621 (for Windows 11 22H2), and exclude Preview and Out-of-Band updates
 $LatestUpdateLink = $UpdateLinks | Where-Object {($_.outerHTML -match $CurrentWindowsVersion.OSBuild.Split('.')[0]) -and ($_.outerHTML -notmatch "Preview") -and ($_.outerHTML -notmatch "Out-of-band")} | Select-Object -First 1
+
+if (-not $LatestUpdateLink) 
+{
+    throw "Unable to find the Latest Cumulative Update (LCU) for Build Number $($CurrentWindowsVersion.OSBuild.Split('.')[0]) in the $($UpdateHistoryWebsite.ProductName) Update History support article $($UpdateHistoryWebsite.Uri)."
+}
 
 # Create a structured object that describes the installed update 
 $InstalledUpdatedInfo = Format-UpdateLink $InstalledUpdateLink
@@ -179,6 +190,8 @@ $TimeDifference = New-TimeSpan -Start $InstalledUpdatedInfo.ReleaseDate -End $La
 
 $NumberOfDaysBehindLCU = $TimeDifference.Days
 
+<#
+
 # ! - Remove all Write-Host statements before importing this script - !
 Write-Host "`nThe installed cumulative update '$($InstalledUpdatedInfo.Name)' is $NumberOfDaysBehindLCU days behind the latest cumulative update '$($LatestUpdateInfo.Name)'"
 
@@ -191,6 +204,8 @@ $InstalledUpdatedInfo | Format-List
 Write-Host "`nLatest Cumulative Update:"
 $LatestUpdateInfo | Format-List
 # ! - Remove all Write-Host statements before importing this script - !
+
+#>
 
 # Return the number of days that the installed update is behind the latest update
 # The output should be a hashtable converted to a JSON string
