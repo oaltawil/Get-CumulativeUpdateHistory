@@ -179,8 +179,6 @@ $TimeDifference = New-TimeSpan -Start $InstalledUpdatedInfo.ReleaseDate -End $La
 
 $NumberOfDaysBehindLCU = $TimeDifference.Days
 
-<#
-
 # ! - Remove all Write-Host statements before importing this script - !
 Write-Host "`nThe installed cumulative update '$($InstalledUpdatedInfo.Name)' is $NumberOfDaysBehindLCU days behind the latest cumulative update '$($LatestUpdateInfo.Name)'"
 
@@ -193,8 +191,6 @@ $InstalledUpdatedInfo | Format-List
 Write-Host "`nLatest Cumulative Update:"
 $LatestUpdateInfo | Format-List
 # ! - Remove all Write-Host statements before importing this script - !
-
-#>
 
 # Return the number of days that the installed update is behind the latest update
 # The output should be a hashtable converted to a JSON string
