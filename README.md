@@ -1,6 +1,4 @@
 # Get-CumulativeUpdateHistory
-Returns the age of the installed Cumulative Update relative to the latest available Cumulative Update.
-
 This is a Discovery script for a custom Intune Compliance policy that monitors the age of the installed cumulative update relative to the latest available cumulative update.
 
 The script compares the release dates of the installed cumulative update and the latest available cumulative update and returns the number of days between them.
