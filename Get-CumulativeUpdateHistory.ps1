@@ -1,4 +1,8 @@
 <#
+.NOTES
+This sample script is not supported under any Microsoft standard support program or service. The sample script is provided AS IS without warranty of any kind. Microsoft disclaims all implied warranties including, without limitation, any implied warranties of merchantability or of fitness for a particular purpose. The entire risk arising out of the use or performance of the sample script remains with you. 
+In no event shall Microsoft, its authors, or anyone else involved in the creation, production, or delivery of the script be liable for any damages whatsoever (including, without limitation, damages for loss of business profits, business interruption, loss of business information, or other pecuniary loss) arising out of the use of or inability to use the sample script, even if Microsoft has been advised of the possibility of such damages.
+
 .SYNOPSIS
 This is the Discovery script for a custom Intune Compliance policy that monitors the age of the installed cumulative update relative to the latest available cumulative update.
 
@@ -14,15 +18,22 @@ The script is broken down into three parts: two functions and the main body of t
 [CmdletBinding()]
 Param ()
 
-# A list of the Update History support web pages for Windows 11 and Windows 10.
-# The Update History webpage for each version of Windows 11 includes *all* Cumulative Updates for *all* supported versions of Windows 11
-# The Update History webpage for Windows 11, https://aka.ms/WindowsUpdateHistory, currently points to Windows 11 Version 22H2
-# The Update History webpage for Windows 10 points to Windows 10 Version 22H2, the last supported version of Windows 10
-$UpdateHistoryWebsites=@"
-ProductName,Uri
-Windows 11,https://aka.ms/WindowsUpdateHistory
-Windows 10,https://support.microsoft.com/en-us/help/5018682
+<#
+# A list of the Update History web pages for supported versions of Windows 11 and Windows 10
+# The list also includes the initial OS build number and initial release date of each supported feature update or version of Windows 11/10
+# Reference: https://learn.microsoft.com/en-us/windows/release-health/windows11-release-information
+#
+#>
+$WindowsUpdateHistoryInformation = 
+@"
+ProductName,Version,InitialOSBuild,InitialReleaseDate,Uri
+Windows 11,23H2,22631.2428,2023-10-31,https://support.microsoft.com/en-us/help/5031682
+Windows 11,22H2,22621.521,2022-09-20,https://support.microsoft.com/en-us/help/5018680
+Windows 11,21H2,22000.194,2021-10-04,https://support.microsoft.com/en-us/help/5006099
+Windows 10,22H2,19045.2130,2022-10-18,https://support.microsoft.com/en-us/help/5018682
+Windows 10,21H2,19044.1288,2021-11-16,https://support.microsoft.com/en-us/help/5008339
 "@
+
 
 <#
 ############################################
@@ -129,10 +140,15 @@ This function accepts the hypertext link for a Cumulative Update and returns a c
 #>
 
 # Retrieve version details of the running operating system
-$CurrentWindowsVersion = Get-WindowsVersion
+$WindowsVersion = Get-WindowsVersion
 
-# Locate the Update History web page that corresponds to the running operating system's name, e.g. Windows 11
-$UpdateHistoryWebsite = $UpdateHistoryWebsites | ConvertFrom-Csv | Where-Object {$CurrentWindowsVersion.ProductName -match $_.ProductName}
+# Locate the Update History web page that corresponds to the running operating system's name and version, e.g. Windows 11 22H2
+$WindowsUpdateHistory = $WindowsUpdateHistoryInformation | ConvertFrom-Csv | Where-Object {$WindowsVersion.ProductName -match $_.ProductName -and $WindowsVersion.Version -eq $_.Version}
+
+if (-not $WindowsUpdateHistory) 
+{
+    throw "Unable to find the Windows Update History information for the running operating system."
+}
 
 # Disable the (default) progress indicator shown by 'Invoke-WebRequest'; it significantly affects download speed
 $ProgressPreference = 'SilentlyContinue'
@@ -145,7 +161,7 @@ Save the HTML web response, which contains the following information:
     - Links: The <a> (anchor) HTML element, with its href attribute, creates a hyperlink to web pages, files, email addresses, locations in the same page, or anything else a URL can address
     - Relation Links: The <link> HTML element specifies relationships between the current document and an external resource. This element is most commonly used to link to stylesheets and is also used to establish site icons.
 #>
-$HtmlWebResponse = Invoke-WebRequest -Uri $UpdateHistoryWebsite.Uri -UseBasicParsing -ErrorAction Stop
+$HtmlWebResponse = Invoke-WebRequest -Uri $WindowsUpdateHistory.Uri -UseBasicParsing -ErrorAction Stop
 
 # Verify that the web page contains hypertext links - <a> or anchor Html elements. This is the only property of the web response object that we're interested in.
 If (-not $HtmlWebResponse.Links)
@@ -159,53 +175,89 @@ $UpdateLinks = $HtmlWebResponse.Links | Where-Object {$_.class -eq "supLeftNavLi
 
 if (-not $UpdateLinks) 
 {
-    throw "The Update History support article $($UpdateHistoryWebsite.Uri) for $($UpdateHistoryWebsite.ProductName) does not contain the expected hypertext links."
+    throw "The Update History support article $($WindowsUpdateHistory.Uri) for $($WindowsUpdateHistory.ProductName) $($WindowsUpdateHistory.Version) does not contain the expected hypertext links."
 }
 
-# Find the installed update; match the full OS Build of the running operating system, e.g. 22621.2506
-$InstalledUpdateLink = $UpdateLinks | Where-Object {$_.outerHTML -match $CurrentWindowsVersion.OSBuild} | Select-Object -First 1
+<#
+######################
+Installed CU Discovery
+######################
+#>
 
-if (-not $InstalledUpdateLink)
+# Find the installed cumulative update in the Update History webpage. Match the full OS Build of the running operating system, e.g. 22621.2506.
+$InstalledUpdateLink = $UpdateLinks | Where-Object {$_.outerHTML -match $WindowsVersion.OSBuild} | Select-Object -First 1
+
+# If the installed cumulative update was found in the Update History webpage
+if ($InstalledUpdateLink) {
+
+    # Create a structured object that describes the installed cumulative update
+    $InstalledUpdateInfo = Format-UpdateLink $InstalledUpdateLink
+
+}
+# Unable to find the installed update in the Windows Update History webpage
+# Determine if the running operating system does not have any updates installed. In other words, if it's the initial build of a Feature Update or Verion of Windows 11/10.
+elseif ($WindowsVersion.OSBuild -eq $WindowsUpdateHistory.InitialOSBuild) 
 {
-    throw "Unable to find the installed Cumulative Update for OS Build $($CurrentWindowsVersion.OSBuild) in the $($UpdateHistoryWebsite.ProductName) Update History support article $($UpdateHistoryWebsite.Uri)"
+    # Create an object with a single property Release Date, which is the initial release date of the Windows 11/10 Feature Update or Version.
+    $InstalledUpdateInfo = [PSCustomObject]@{ReleaseDate = [datetime]$WindowsUpdateHistory.InitialReleaseDate}
 }
+else 
+{
+    throw "Unable to find the installed Cumulative Update for OS Build $($WindowsVersion.OSBuild) in the $($WindowsUpdateHistory.ProductName) $($WindowsUpdateHistory.Version) Update History support article $($WindowsUpdateHistory.Uri)"
+}
+
+
+<#
+#############
+LCU Discovery
+#############
+#>
 
 # Find the latest update for the same current build, e.g. 22621 (for Windows 11 22H2), and exclude Preview and Out-of-Band updates
-$LatestUpdateLink = $UpdateLinks | Where-Object {($_.outerHTML -match $CurrentWindowsVersion.OSBuild.Split('.')[0]) -and ($_.outerHTML -notmatch "Preview") -and ($_.outerHTML -notmatch "Out-of-band")} | Select-Object -First 1
+$LatestUpdateLink = $UpdateLinks | Where-Object {($_.outerHTML -match $WindowsVersion.OSBuild.Split('.')[0]) -and ($_.outerHTML -notmatch "Preview") -and ($_.outerHTML -notmatch "Out-of-band")} | Select-Object -First 1
 
-if (-not $LatestUpdateLink) 
+# If the latest cumulative update was found in the Update History webpage
+if ($LatestUpdateLink)
 {
-    throw "Unable to find the Latest Cumulative Update (LCU) for Build Number $($CurrentWindowsVersion.OSBuild.Split('.')[0]) in the $($UpdateHistoryWebsite.ProductName) Update History support article $($UpdateHistoryWebsite.Uri)."
+    # Create a structured object that describes the latest non-Preview update
+    $LatestUpdateInfo = Format-UpdateLink $LatestUpdateLink
+}
+else
+{
+    Write-Verbose "There are no cumulative updates (excluding Preview and Out-of-Band updates) for Build Number $($WindowsVersion.OSBuild.Split('.')[0]) in the $($WindowsUpdateHistory.ProductName) $($WindowsUpdateHistory.Version) Update History support article $($WindowsUpdateHistory.Uri)."
+
+    return @{NumberOfDaysBehindLCU = 0} | ConvertTo-Json -Compress
+
 }
 
-# Create a structured object that describes the installed update 
-$InstalledUpdatedInfo = Format-UpdateLink $InstalledUpdateLink
-
-# Create a structured object that describes the latest non-Preview update
-$LatestUpdateInfo = Format-UpdateLink $LatestUpdateLink
+<#
+###############
+Time Difference
+###############
+#>
 
 # Calculate the time difference between the release dates of the installed update and latest update
 # The time difference can be negative; i.e. the installed update is more recent than the latest update. This can happen if the user installed the latest cumulative preview update since we're excluding preview and out-of-band updates. 
-$TimeDifference = New-TimeSpan -Start $InstalledUpdatedInfo.ReleaseDate -End $LatestUpdateInfo.ReleaseDate
+$TimeDifference = New-TimeSpan -Start $InstalledUpdateInfo.ReleaseDate -End $LatestUpdateInfo.ReleaseDate
 
 $NumberOfDaysBehindLCU = $TimeDifference.Days
 
 <#
-
-# ! - Remove all Write-Host statements before importing this script - !
-Write-Host "`nThe installed cumulative update '$($InstalledUpdatedInfo.Name)' is $NumberOfDaysBehindLCU days behind the latest cumulative update '$($LatestUpdateInfo.Name)'"
-
-Write-Host "`nOperating System:"
-$CurrentWindowsVersion | Format-List
-
-Write-Host "`nInstalled Cumulative Update:"
-$InstalledUpdatedInfo | Format-List
-
-Write-Host "`nLatest Cumulative Update:"
-$LatestUpdateInfo | Format-List
-# ! - Remove all Write-Host statements before importing this script - !
-
+#########################################
+Verbose Messages: Use -Verbose to display
+#########################################
 #>
+
+# If the installed cumulative update was found in the Update History webpage 
+if ($InstalledUpdateInfo.Name) 
+{
+    Write-Verbose "The installed cumulative update '$($InstalledUpdateInfo.Name)' is $NumberOfDaysBehindLCU days behind the latest cumulative update '$($LatestUpdateInfo.Name)'"
+}
+# If the running O/S is the initial build of a feature update or version of Windows; i.e. it has no updates installed
+elseif ($InstalledUpdateInfo.ReleaseDate)
+{
+    Write-Verbose "There are no cumulative updates installed. The OS Build '$($WindowsVersion.OSBuild)' is $NumberOfDaysBehindLCU days behind the latest cumulative update '$($LatestUpdateInfo.Name)'"
+}
 
 # Return the number of days that the installed update is behind the latest update
 # The output should be a hashtable converted to a JSON string
