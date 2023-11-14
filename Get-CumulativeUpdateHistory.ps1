@@ -8,20 +8,22 @@ This is the Discovery script for a custom Intune Compliance policy that monitors
 
 .DESCRIPTION
 This script compares the release dates of the installed cumulative update and the latest available cumulative update and returns the number of days between them.
-- Downloads the Update History webpage for the running operating system, e.g. 'https://support.microsoft.com/en-us/help/5018680' for Windows 11 22H2.
-- Determines the release dates of the installed cumulative update and latest available cumulative update
-- Returns the number of days that have passed from the release date of the installed update to the release date of the latest available update.
+1. Downloads the Update History webpage for the running operating system, e.g. 'https://support.microsoft.com/en-us/help/5018680' for Windows 11 22H2.
+2. Determines the release dates of the installed cumulative update and latest available cumulative update.
+3. Returns the number of days that have passed from the release date of the installed update to the release date of the latest available update. The return type is a JSON object with a single (integer) property called NumberOfDaysSinceLCU.
 
-Tip: Use the -Verbose common parameter to display the following output:
-VERBOSE: The installed cumulative update 'October 10, 2023 - KB5031354 (OS Build 22621.2428)' is 35 days behind the
-latest cumulative update 'November 14, 2023 - KB5032190 (OS Builds 22621.2715 and 22631.2715)'
+Notes:
+- If the OS Build of the running operating system cannot be found in the Windows Update History webpage, then no cumulative updates have been installed. Non-cumulative updates, typically necessary servicing stack updates, were most probably included in the image, or were installed by Windows Setup Dynamic Update or by Windows Update client from Microsoft Update/WSUS/MECM. In this case, the script uses the release date of the initial build of the Windows 10/11 feature update or version, e.g. October 04, 2021 for Windows 11 21H2.
+- If the latest cumulative update cannot be found in the Windows Update History webpage, then the script returns zero for the 'NumberOfDaysSinceLCU' property. This can happen for a freshly released Windows 11 feature update or version, e.g. 23H2, that doesn't have any non-Preview cumulative updates published yet (as of November 10, 2023).
+
+Tip: Use the -Verbose common parameter to display details about the installed and latest cumulative updates.
 #>
 
 [CmdletBinding()]
 Param ()
 
 <#
-# A list of the Update History web pages for supported versions of Windows 11 and Windows 10
+# A list of the Update History web pages for supported versions of Windows 11 and Windows 10 (as of November 10, 2023)
 # The list also includes the initial OS build number and initial release date of each supported feature update or version of Windows 11/10
 # Reference: https://learn.microsoft.com/en-us/windows/release-health/windows11-release-information
 #
@@ -149,7 +151,7 @@ $WindowsUpdateHistory = $WindowsUpdateHistoryInformation | ConvertFrom-Csv | Whe
 
 if (-not $WindowsUpdateHistory) 
 {
-    throw "Unable to find the Windows Update History information for the running operating system."
+    throw "Unable to find the Windows Update History support webpage for the running operating system: $($WindowsVersion.ProductName) $($WindowsVersion.Version)."
 }
 
 # Disable the (default) progress indicator shown by 'Invoke-WebRequest'; it significantly affects download speed
@@ -196,18 +198,12 @@ if ($InstalledUpdateLink) {
     $InstalledUpdateInfo = Format-UpdateLink $InstalledUpdateLink
 
 }
-# Unable to find the installed update in the Windows Update History webpage
-# Determine if the running operating system does not have any updates installed. In other words, if it's the initial build of a Feature Update or Verion of Windows 11/10.
-elseif ($WindowsVersion.OSBuild -eq $WindowsUpdateHistory.InitialOSBuild) 
-{
-    # Create an object with a single property Release Date, which is the initial release date of the Windows 11/10 Feature Update or Version.
+else {
+# If the OS Build cannot be found in the Windows Update History webpage, then no cumulative updates have been installed. Non-cumulative updates were included in the image, or were installed by Windows Setup Dynamic Updates or by Windows Update client from Microsoft Update/WSUS/MECM
+    # Return the release date of the initial build of the Windows 11/10 feature update or version
+    # Create an object with a single property ReleaseDate, which is the initial release date of the Windows 11/10 Feature Update or Version.
     $InstalledUpdateInfo = [PSCustomObject]@{ReleaseDate = [datetime]$WindowsUpdateHistory.InitialReleaseDate}
 }
-else 
-{
-    throw "Unable to find the installed Cumulative Update for OS Build $($WindowsVersion.OSBuild) in the $($WindowsUpdateHistory.ProductName) $($WindowsUpdateHistory.Version) Update History support article $($WindowsUpdateHistory.Uri)"
-}
-
 
 <#
 #############
@@ -228,6 +224,7 @@ else
 {
     Write-Verbose "There are no cumulative updates (excluding Preview and Out-of-Band updates) for Build Number $($WindowsVersion.OSBuild.Split('.')[0]) in the $($WindowsUpdateHistory.ProductName) $($WindowsUpdateHistory.Version) Update History support article $($WindowsUpdateHistory.Uri)."
 
+    # Return zero since there is no point of reference and exit.
     return @{NumberOfDaysBehindLCU = 0} | ConvertTo-Json -Compress
 
 }
@@ -256,7 +253,7 @@ if ($InstalledUpdateInfo.Name)
     Write-Verbose "The installed cumulative update '$($InstalledUpdateInfo.Name)' is $NumberOfDaysBehindLCU days behind the latest cumulative update '$($LatestUpdateInfo.Name)'"
 }
 # If the running O/S is the initial build of a feature update or version of Windows; i.e. it has no updates installed
-elseif ($InstalledUpdateInfo.ReleaseDate)
+else
 {
     Write-Verbose "There are no cumulative updates installed. The OS Build '$($WindowsVersion.OSBuild)' is $NumberOfDaysBehindLCU days behind the latest cumulative update '$($LatestUpdateInfo.Name)'"
 }
