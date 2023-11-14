@@ -28,16 +28,16 @@ Param ()
 # Reference: https://learn.microsoft.com/en-us/windows/release-health/windows11-release-information
 #
 #>
+# < !- WARNING -! > This information must be manually updated once a year, in the fall, when a new feature update or version of Windows 11 is released, e.g. 24H2.
 $WindowsUpdateHistoryInformation = 
 @"
-ProductName,Version,InitialOSBuild,InitialReleaseDate,Uri
-Windows 11,23H2,22631.2428,2023-10-31,https://support.microsoft.com/en-us/help/5031682
-Windows 11,22H2,22621.521,2022-09-20,https://support.microsoft.com/en-us/help/5018680
-Windows 11,21H2,22000.194,2021-10-04,https://support.microsoft.com/en-us/help/5006099
-Windows 10,22H2,19045.2130,2022-10-18,https://support.microsoft.com/en-us/help/5018682
-Windows 10,21H2,19044.1288,2021-11-16,https://support.microsoft.com/en-us/help/5008339
+ProductName,Version,InitialReleaseDate,Uri
+Windows 11,23H2,2023-10-31,https://support.microsoft.com/en-us/help/5031682
+Windows 11,22H2,2022-09-20,https://support.microsoft.com/en-us/help/5018680
+Windows 11,21H2,2021-10-04,https://support.microsoft.com/en-us/help/5006099
+Windows 10,22H2,2022-10-18,https://support.microsoft.com/en-us/help/5018682
+Windows 10,21H2,2021-11-16,https://support.microsoft.com/en-us/help/5008339
 "@
-
 
 <#
 ############################################
@@ -183,6 +183,30 @@ if (-not $UpdateLinks)
 }
 
 <#
+#############
+LCU Discovery
+#############
+#>
+
+# Find the latest update for the same current build, e.g. 22621 (for Windows 11 22H2), and exclude Preview and Out-of-Band updates
+$LatestUpdateLink = $UpdateLinks | Where-Object {($_.outerHTML -match $WindowsVersion.OSBuild.Split('.')[0]) -and ($_.outerHTML -notmatch "Preview") -and ($_.outerHTML -notmatch "Out-of-band")} | Select-Object -First 1
+
+# If the latest cumulative update was found in the Update History webpage
+if ($LatestUpdateLink)
+{
+    # Create a structured object that describes the latest non-Preview cumulative update
+    $LatestUpdateInfo = Format-UpdateLink $LatestUpdateLink
+}
+else
+{
+    Write-Verbose "There are no cumulative updates (excluding Preview and Out-of-Band updates) for Build Number $($WindowsVersion.OSBuild.Split('.')[0]) in the $($WindowsUpdateHistory.ProductName) $($WindowsUpdateHistory.Version) Update History support article $($WindowsUpdateHistory.Uri)."
+
+    # Return zero since there is no point of reference and exit.
+    return @{NumberOfDaysBehindLCU = 0} | ConvertTo-Json -Compress
+
+}
+
+<#
 ######################
 Installed CU Discovery
 ######################
@@ -202,30 +226,6 @@ else {
     # If the OS Build cannot be found in the Windows Update History webpage, then no cumulative updates have been installed.
     # Return an object with a single property ReleaseDate, which is the initial release date of the Windows 11/10 Feature Update or Version.
     $InstalledUpdateInfo = [PSCustomObject]@{ReleaseDate = [datetime]$WindowsUpdateHistory.InitialReleaseDate}
-}
-
-<#
-#############
-LCU Discovery
-#############
-#>
-
-# Find the latest update for the same current build, e.g. 22621 (for Windows 11 22H2), and exclude Preview and Out-of-Band updates
-$LatestUpdateLink = $UpdateLinks | Where-Object {($_.outerHTML -match $WindowsVersion.OSBuild.Split('.')[0]) -and ($_.outerHTML -notmatch "Preview") -and ($_.outerHTML -notmatch "Out-of-band")} | Select-Object -First 1
-
-# If the latest cumulative update was found in the Update History webpage
-if ($LatestUpdateLink)
-{
-    # Create a structured object that describes the latest non-Preview update
-    $LatestUpdateInfo = Format-UpdateLink $LatestUpdateLink
-}
-else
-{
-    Write-Verbose "There are no cumulative updates (excluding Preview and Out-of-Band updates) for Build Number $($WindowsVersion.OSBuild.Split('.')[0]) in the $($WindowsUpdateHistory.ProductName) $($WindowsUpdateHistory.Version) Update History support article $($WindowsUpdateHistory.Uri)."
-
-    # Return zero since there is no point of reference and exit.
-    return @{NumberOfDaysBehindLCU = 0} | ConvertTo-Json -Compress
-
 }
 
 <#
