@@ -12,7 +12,9 @@ This script compares the release dates of the installed cumulative update and th
 - Determines the release dates of the installed cumulative update and latest available cumulative update
 - Returns the number of days that have passed from the release date of the installed update to the release date of the latest available update.
 
-The script is broken down into three parts: two functions and the main body of the script.
+Tip: Use the -Verbose common parameter to display the following output:
+VERBOSE: The installed cumulative update 'October 10, 2023 - KB5031354 (OS Build 22621.2428)' is 35 days behind the
+latest cumulative update 'November 14, 2023 - KB5032190 (OS Builds 22621.2715 and 22631.2715)'
 #>
 
 [CmdletBinding()]
