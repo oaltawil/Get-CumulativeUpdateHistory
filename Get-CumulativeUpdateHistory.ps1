@@ -259,5 +259,5 @@ else
 }
 
 # Return the number of days that the installed update is behind the latest update
-# The output should be a hashtable converted to a JSON string
+# The output is a hashtable converted to a JSON string
 return @{NumberOfDaysBehindLCU = $NumberOfDaysBehindLCU} | ConvertTo-Json -Compress
