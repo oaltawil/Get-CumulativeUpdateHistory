@@ -22,13 +22,9 @@ Tip: Use the -Verbose common parameter to display details about the installed an
 [CmdletBinding()]
 Param ()
 
-<#
-# A list of the Update History web pages for supported versions of Windows 11 and Windows 10 (as of November 10, 2023)
-# The list also includes the initial OS build number and initial release date of each supported feature update or version of Windows 11/10
-# Reference: https://learn.microsoft.com/en-us/windows/release-health/windows11-release-information
-#
-#>
-# < !- WARNING -! > This information must be manually updated once a year, in the fall, when a new feature update or version of Windows 11 is released, e.g. 24H2.
+# A list of the Update History web pages for supported versions of Windows 11 and Windows 10 (as of November 10, 2023). The list also includes the initial release date of each version.
+# Reference: https://learn.microsoft.com/en-us/windows/release-health/windows11-release-information.
+# < !- WARNING -! > This information must be manually updated once a year - in the fall - when a new feature update or version of Windows 11 is released, e.g. 24H2.
 $WindowsUpdateHistoryInformation = 
 @"
 ProductName,Version,InitialReleaseDate,Uri
