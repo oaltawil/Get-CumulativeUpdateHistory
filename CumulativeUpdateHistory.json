@@ -2,7 +2,7 @@
    "Rules":[ 
         { 
             "SettingName":"NumberOfDaysBehindLCU",
-            "Operator":"GreaterThan",
+            "Operator":"LessThan",
             "DataType":"Int64",
             "Operand":"60",
             "MoreInfoUrl":"https://bing.com",
